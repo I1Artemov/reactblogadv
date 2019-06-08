@@ -1,9 +1,17 @@
 ﻿import React from 'react';
 import ReactDOM from 'react-dom';
 import { connect } from 'react-redux';
-import { getCommentsForPost } from './commentListActions.jsx';
+import {
+    getCommentsForPost,
+    allocateElementForCommentsBlockInState,
+    getInstanceStateByPostId
+} from './commentListActions.jsx';
 
 class CommentList extends React.Component {
+    componentDidMount() {
+        this.props.allocateElementForCommentsBlockInState(this.props.postId);
+    }
+
     render() {
         if (!this.props.isFilled) {
             return (
@@ -31,17 +39,19 @@ class CommentList extends React.Component {
 }
 
 let mapStateToProps = (state, ownProps) => {
+    let requiredInstance = getInstanceStateByPostId(state.commentListReducer, ownProps.postId);
     return {
         postId: ownProps.postId,
-        isFilled: state.commentListReducer.isFilled,
-        commentsInfo: state.commentListReducer.commentsInfo,
-        error: state.commentListReducer.error
+        isFilled: requiredInstance.isFilled,
+        commentsInfo: requiredInstance.commentsInfo,
+        error: requiredInstance.error
     };
 };
 
 let mapActionsToProps = (dispatch) => {
     return {
-        getCommentsForPost: (postId) => dispatch(getCommentsForPost(postId))
+        getCommentsForPost: (postId) => dispatch(getCommentsForPost(postId)),
+        allocateElementForCommentsBlockInState: (postId) => dispatch(allocateElementForCommentsBlockInState(postId))
     };
 };
 

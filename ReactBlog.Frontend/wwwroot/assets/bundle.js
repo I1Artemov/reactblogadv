@@ -3701,6 +3701,8 @@ Object.defineProperty(exports, "__esModule", {
 var GET_POSTS_SUCCESS = exports.GET_POSTS_SUCCESS = 'GET_POSTS_SUCCESS';
 var GET_POSTS_ERROR = exports.GET_POSTS_ERROR = 'GET_POSTS_ERROR';
 
+var MAX_POSTS_ON_PAGE = exports.MAX_POSTS_ON_PAGE = 5;
+
 /***/ }),
 /* 38 */
 /***/ (function(module, exports, __webpack_require__) {
@@ -3738,6 +3740,7 @@ Object.defineProperty(exports, "__esModule", {
 });
 var GET_COMMENTS_SUCCESS = exports.GET_COMMENTS_SUCCESS = 'GET_COMMENTS_SUCCESS';
 var GET_COMMENTS_ERROR = exports.GET_COMMENTS_ERROR = 'GET_COMMENTS_ERROR';
+var ALLOCATE_ELEMENT_FOR_COMMENTS_BLOCK_IN_STATE = exports.ALLOCATE_ELEMENT_FOR_COMMENTS_BLOCK_IN_STATE = 'ALLOCATE_ELEMENT_FOR_COMMENTS_BLOCK_IN_STATE';
 
 /***/ }),
 /* 41 */
@@ -32804,6 +32807,11 @@ var CommentList = function (_React$Component) {
     }
 
     _createClass(CommentList, [{
+        key: 'componentDidMount',
+        value: function componentDidMount() {
+            this.props.allocateElementForCommentsBlockInState(this.props.postId);
+        }
+    }, {
         key: 'render',
         value: function render() {
             var _this2 = this;
@@ -32850,11 +32858,12 @@ var CommentList = function (_React$Component) {
 }(_react2.default.Component);
 
 var mapStateToProps = function mapStateToProps(state, ownProps) {
+    var requiredInstance = (0, _commentListActions.getInstanceStateByPostId)(state.commentListReducer, ownProps.postId);
     return {
         postId: ownProps.postId,
-        isFilled: state.commentListReducer.isFilled,
-        commentsInfo: state.commentListReducer.commentsInfo,
-        error: state.commentListReducer.error
+        isFilled: requiredInstance.isFilled,
+        commentsInfo: requiredInstance.commentsInfo,
+        error: requiredInstance.error
     };
 };
 
@@ -32862,6 +32871,9 @@ var mapActionsToProps = function mapActionsToProps(dispatch) {
     return {
         getCommentsForPost: function getCommentsForPost(postId) {
             return dispatch((0, _commentListActions.getCommentsForPost)(postId));
+        },
+        allocateElementForCommentsBlockInState: function allocateElementForCommentsBlockInState(postId) {
+            return dispatch((0, _commentListActions.allocateElementForCommentsBlockInState)(postId));
         }
     };
 };
@@ -32880,25 +32892,38 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.receiveComments = receiveComments;
 exports.errorReceive = errorReceive;
+exports.allocateElementForCommentsBlockInState = allocateElementForCommentsBlockInState;
 exports.getCommentsForPost = getCommentsForPost;
+exports.getInstanceStateByPostId = getInstanceStateByPostId;
 
 var _commentListConstants = __webpack_require__(40);
 
 var _const = __webpack_require__(38);
 
+var _commentListReducer = __webpack_require__(115);
+
 __webpack_require__(39);
 
-function receiveComments(data) {
+function receiveComments(data, postId) {
     return {
         type: _commentListConstants.GET_COMMENTS_SUCCESS,
+        postId: postId,
         commentsInfo: data
     };
 }
 
-function errorReceive(err) {
+function errorReceive(err, postId) {
     return {
         type: _commentListConstants.GET_COMMENTS_ERROR,
+        postId: postId,
         error: err
+    };
+}
+
+function allocateElementForCommentsBlockInState(postId) {
+    return {
+        type: _commentListConstants.ALLOCATE_ELEMENT_FOR_COMMENTS_BLOCK_IN_STATE,
+        postId: postId
     };
 }
 
@@ -32909,11 +32934,20 @@ function getCommentsForPost(postId) {
         fetch(_const.Href_BlogPostController_GetComments + queryTrailer).then(function (response) {
             return response.json();
         }).then(function (data) {
-            dispatch(receiveComments(data));
+            dispatch(receiveComments(data, postId));
         }).catch(function (ex) {
-            dispatch(errorReceive(ex));
+            dispatch(errorReceive(ex, postId));
         });
     };
+}
+
+function getInstanceStateByPostId(state, postId) {
+    var foundElement = state.find(function (x) {
+        return x.postId === postId;
+    });
+    if (foundElement) return foundElement;
+
+    return (0, _commentListReducer.getDefaultStateElement)();
 }
 
 /***/ }),
@@ -32967,6 +33001,7 @@ function blog() {
 Object.defineProperty(exports, "__esModule", {
     value: true
 });
+exports.getDefaultStateElement = undefined;
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 
@@ -32974,23 +33009,74 @@ exports.default = commentList;
 
 var _commentListConstants = __webpack_require__(40);
 
-var initialState = {
-    postId: -1,
-    isFilled: false,
-    commentsInfo: [],
-    error: ""
+var _blogConstants = __webpack_require__(37);
+
+var getDefaultStateElement = exports.getDefaultStateElement = function getDefaultStateElement() {
+    return {
+        postId: null,
+        isFilled: false,
+        commentsInfo: [],
+        error: ""
+    };
+};
+
+// В начальном состоянии храним отдельно стейты блоков комментов для каждого из отображаемых постов
+var getInitialState = function getInitialState() {
+    var initialState = new Array();
+    for (var i = 0; i < _blogConstants.MAX_POSTS_ON_PAGE; i++) {
+        initialState.push(getDefaultStateElement());
+    }
+    return initialState;
 };
 
 function commentList() {
-    var state = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : initialState;
+    var state = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : getInitialState();
     var action = arguments[1];
 
     switch (action.type) {
+        case _commentListConstants.ALLOCATE_ELEMENT_FOR_COMMENTS_BLOCK_IN_STATE:
+            {
+                // Проверяем, выделен ли элемент стейта для комментов поста с заданным Id
+                var isAlreadyHaveElementWithPostId = state.filter(function (x) {
+                    return x.postId === action.postId;
+                }).length !== 0;
+
+                // Если не выделен, то задействуем первый попавшийся "незанятый слот" с postId == null
+                if (!isAlreadyHaveElementWithPostId) {
+                    return state.map(function (item) {
+                        if (!isAlreadyHaveElementWithPostId && item.postId === null) {
+                            isAlreadyHaveElementWithPostId = true;
+                            return _extends({}, item, { postId: action.postId });
+                        }
+                        return _extends({}, item);
+                    });
+                }
+                return state;
+            }
+
         case _commentListConstants.GET_COMMENTS_SUCCESS:
-            return _extends({}, state, { isFilled: true, commentsInfo: action.commentsInfo, error: '' });
+            {
+                // Заполняем блок комментов только для выбранного поста
+                var newState = state.map(function (item) {
+                    if (item.postId === action.postId) {
+                        return _extends({}, item, { isFilled: true, error: "", commentsInfo: action.commentsInfo });
+                    }
+                    return _extends({}, item);
+                });
+                return newState;
+            }
 
         case _commentListConstants.GET_COMMENTS_ERROR:
-            return _extends({}, state, { error: action.error });
+            {
+                // Ошибка выборки комментов для одного из постов
+                var _newState = state.map(function (item) {
+                    if (item.postId === action.postId) {
+                        return _extends({}, item, { isFilled: false, error: action.err, commentsInfo: [] });
+                    }
+                    return _extends({}, item);
+                });
+                return _newState;
+            }
 
         default:
             return state;
